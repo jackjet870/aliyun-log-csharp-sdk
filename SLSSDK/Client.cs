@@ -18,6 +18,9 @@ using System.Diagnostics;
 using System.IO;
 using System.Text;
 using Aliyun.Api.SLS.Response;
+#if SLS_SDK_45
+using Google.Protobuf;
+#endif
 
 namespace Aliyun.Api.LOG
 {
@@ -258,17 +261,50 @@ namespace Aliyun.Api.LOG
                 return res;
             }
         }
-     
+
         /// <summary>
         /// put logs into sls server
         /// </summary>
         /// <param name="request">The request to put logs </param>
         /// <exception>LogException</exception>
         /// <returns>The response to put logs</returns>
-        public PutLogsResponse PutLogs(PutLogsRequest request) 
+#if SLS_SDK_45
+        public PutLogsResponse PutLogs(PutLogsRequest request)
+        {
+            LogGroup logGroup = new LogGroup();
+
+            if (request.IsSetTopic())
+                logGroup.Topic = request.Topic;
+
+            if (request.IsSetSource())
+                logGroup.Source = request.Source;
+            else
+                logGroup.Source = _localMachinePrivateIp;  //use default machine private ip as source (should we
+
+            if (request.IsSetLogItems())
+            {
+                foreach (var item in request.LogItems)
+                {
+                    Log log = new Log();
+                    log.Time = item.Time;
+                    foreach (var kv in item.Contents)
+                    {
+                        Log.Types.Content content = new Log.Types.Content();
+                        content.Key = kv.Key;
+                        content.Value = kv.Value;
+                        log.Contents.Add(content);
+                    }
+                    logGroup.Logs.Add(log);
+                }
+            }
+
+            return PutLogs(request, logGroup);
+        }
+#else
+        public PutLogsResponse PutLogs(PutLogsRequest request)
         {
             LogGroup.Builder lgBuilder = LogGroup.CreateBuilder();
-            
+
             if (request.IsSetTopic())
                 lgBuilder.Topic = request.Topic;
 
@@ -296,13 +332,22 @@ namespace Aliyun.Api.LOG
 
             return PutLogs(request, lgBuilder.Build());
         }
+#endif
+
 
         internal PutLogsResponse PutLogs(PutLogsRequest request, LogGroup logGroup)
         {
+#if SLS_SDK_45
+            if (logGroup.Logs.Count > LogConsts.LIMIT_LOG_COUNT)
+                throw new LogException("InvalidLogSize", "logItems' length exceeds maximum limitation： " + LogConsts.LIMIT_LOG_COUNT + " lines.");
+            else if (logGroup.CalculateSize() > LogConsts.LIMIT_LOG_SIZE)
+                throw new LogException("InvalidLogSize", "logItems' size exceeds maximum limitation: " + LogConsts.LIMIT_LOG_SIZE + " byte.");
+#else
             if (logGroup.LogsCount > LogConsts.LIMIT_LOG_COUNT)
                 throw new LogException("InvalidLogSize", "logItems' length exceeds maximum limitation： " + LogConsts.LIMIT_LOG_COUNT + " lines.");
             else if(logGroup.SerializedSize > LogConsts.LIMIT_LOG_SIZE)
                 throw new LogException("InvalidLogSize", "logItems' size exceeds maximum limitation: " + LogConsts.LIMIT_LOG_SIZE + " byte.");
+#endif
             ServiceRequest sReq = new ServiceRequest();
             sReq.Method = HttpMethod.Post;
             sReq.Endpoint = BuildReqEndpoint(request);

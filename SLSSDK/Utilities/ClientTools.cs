@@ -17,46 +17,35 @@ using System.Net;
 using System.Security.Cryptography;
 using System.Text;
 using System.IO.Compression;
+#if !SLS_SDK_45
 using LZ4Sharp;
 using Lz4;
+#endif
 
 namespace Aliyun.Api.LOG.Utilities
 {
     internal class LogClientTools
     {
-        public static byte[] CompressToZlib(byte[] buffer)
-        {
-            using (MemoryStream compressStream = new MemoryStream())
-            {
-                using (ZLibNet.ZLibStream gz = new ZLibNet.ZLibStream(compressStream, ZLibNet.CompressionMode.Compress, ZLibNet.CompressionLevel.Level6, true))
-                {
-                    gz.Write(buffer, 0, buffer.Length);
-                    compressStream.Seek(0, SeekOrigin.Begin);
-                byte[] compressBuffer = new byte[compressStream.Length];
-                compressStream.Read(compressBuffer, 0, compressBuffer.Length);
-                return compressBuffer;
-                }
-            }
-        }
-        public static byte[] DecompressFromZlib(Stream stream, int rawSize)
-        {
-            using (stream)
-            {
-                using (ZLibNet.ZLibStream dz = new ZLibNet.ZLibStream(stream, ZLibNet.CompressionMode.Decompress))
-                {
-                    byte[] buffer = new byte[rawSize];
-                    dz.Read(buffer, 0, buffer.Length);
-                    return buffer;
-                }
-            }
-        }
         public static byte[] CompressToLz4(byte[] buffer)
         {
+#if SLS_SDK_45
+            return LZ4.LZ4Codec.Encode(buffer, 0, buffer.Length);
+#else         
             var compressor = LZ4CompressorFactory.CreateNew();
             return compressor.Compress(buffer);
+#endif
         }
         public static byte[] DecompressFromLZ4(Stream stream, int rawLength)
         {
+#if SLS_SDK_45
+            using (MemoryStream ms = new MemoryStream())
+            {
+                stream.CopyTo(ms);
+                byte[] output1 = new byte[rawLength];
+                byte[] input = ms.ToArray();
+                return LZ4.LZ4Codec.Decode(input, 0, input.Length, rawLength);
+            }
+#else         
             using (stream)
             {
                 using (Lz4DecoderStream streamInner = new Lz4DecoderStream(stream))
@@ -66,6 +55,7 @@ namespace Aliyun.Api.LOG.Utilities
                     return output;
                 }
             }
+#endif
         }
         public static string GetMd5Value(byte[] buffer)
         {

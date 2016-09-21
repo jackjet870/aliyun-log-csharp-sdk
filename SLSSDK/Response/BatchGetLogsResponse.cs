@@ -34,7 +34,11 @@ namespace Aliyun.Api.SLS.Response
             {
                 int.TryParse(tmpContentLength, out contentLength);
             }
+#if SLS_SDK_45
+            _logGroupList = LogGroupList.Parser.ParseFrom(LogClientTools.DecompressFromLZ4(body, _rawSize));
+#else
             _logGroupList = LogGroupList.ParseFrom(LogClientTools.DecompressFromLZ4(body, _rawSize));
+#endif
         }
 
         public String NextCursor
